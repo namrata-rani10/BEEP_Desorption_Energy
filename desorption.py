@@ -10,7 +10,7 @@ amu_to_kg = 1.66053906660e-27  # Conversion factor from amu to kg
 angstrom_to_m = 1e-10  # Conversion factor from Å to m
 
 def get_atomic_mass(symbol):
-    """Retrieve atomic mass from the dictionary or ask the user."""
+    """Retrieve atomic mass from the dictionary or asking the user."""
     if symbol in atomic_masses:
         return atomic_masses[symbol] * amu_to_kg
     else:
@@ -92,12 +92,8 @@ def pre_exponential_factor(m, T, sigma, Ia, Ib, Ic):
 def main():
     """Main function to get input and calculate the pre-exponential factor."""
     print("Enter the coordinates in the following format:")
-    print("C 0.00000000 0.00000000 0.00000000")
-    print("H 0.00000000 0.00000000 1.07000000")
-    print("... (One atom per line)")
-    print("When done, press Enter twice.\n")
 
-    # Read multi-line input from user
+    # Read multi-line cartesian input from user
     input_string = ""
     while True:
         line = input()
