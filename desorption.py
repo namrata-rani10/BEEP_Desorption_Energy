@@ -91,7 +91,7 @@ def pre_exponential_factor(m, T, sigma, Ia, Ib, Ic):
 
 def main():
     """Main function to get input and calculate the pre-exponential factor."""
-    print("Enter the coordinates in the following format:")
+    print("Enter the coordinates in the cartesian format:")
 
     # Read multi-line cartesian input from user
     input_string = ""
@@ -103,7 +103,10 @@ def main():
 
     # Parse symbols and coordinates
     symbols, coordinates = parse_coordinates(input_string)
-
+    
+    # Ask the user if the molecule is linear or non-linear
+    is_linear = input("Is the molecule linear? (yes/no): ").strip().lower() == "yes"
+    
     # Calculate moments of inertia
     Ia, Ib, Ic = get_moments_of_inertia(symbols, coordinates)
     print(f"Principal moments of inertia (kg·m²): Ia={Ia:.3e}, Ib={Ib:.3e}, Ic={Ic:.3e}")
