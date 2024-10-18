@@ -33,7 +33,7 @@ def align_to_z_axis(symbols, coordinates, threshold=1e-8):
     center_of_mass = np.sum(masses[:, np.newaxis] * coordinates, axis=0) / total_mass
     shifted_coords = coordinates - center_of_mass
 
-    # Use SVD to find the best alignment axis
+    # Use SVD to find the best alignment axis (SVD is numpy function to get the rotatational matrix to rotate the coordinates along z-axis)
     _, _, vh = np.linalg.svd(shifted_coords)
     rotation_matrix = vh.T
 
