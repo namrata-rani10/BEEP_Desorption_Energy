@@ -1,53 +1,59 @@
-import math
 import numpy as np
+import math
+# Same constants as before
+amu_to_kg = 1.66053906660e-27  # amu to kg
+angstrom_to_m = 1e-10  # Ångström to meters
 
-# Atomic masses in atomic mass units (amu) for common elements
-atomic_masses = {
-    'H': 1.00784, 'C': 12.0107, 'O': 15.999, 'N': 14.0067, 'S': 32.06,
-}
-
-amu_to_kg = 1.66053906660e-27  # Conversion factor from amu to kg
-angstrom_to_m = 1e-10  # Conversion factor from Å to m
+# Atomic masses dictionary
+atomic_masses = {'H': 1.00784, 'C': 12.0107, 'O': 15.999, 'N': 14.0067, 'S': 32.06}
 
 def get_atomic_mass(symbol):
-    """Retrieve atomic mass from the dictionary or asking the user."""
+    """Retrieve atomic mass or ask the user if not found."""
     if symbol in atomic_masses:
         return atomic_masses[symbol] * amu_to_kg
     else:
-        print(f"Atomic mass for '{symbol}' not found.")
-        mass_amu = float(input(f"Please enter the atomic mass of {symbol} in amu: "))
+        mass_amu = float(input(f"Enter the atomic mass of {symbol} in amu: "))
         return mass_amu * amu_to_kg
 
 def parse_coordinates(input_string):
-    """Parse atomic symbols and coordinates from a multiline string."""
-    symbols = []
-    coordinates = []
-
-    # Split input into lines and extract symbol + coordinates from each line
+    """Parse atomic symbols and their xyz coordinates."""
+    symbols, coordinates = [], []
     for line in input_string.strip().splitlines():
         parts = line.split()
-        symbol = parts[0]
-        x, y, z = map(float, parts[1:])
-        symbols.append(symbol)
-        coordinates.append([x, y, z])
+        symbols.append(parts[0])
+        coordinates.append(list(map(float, parts[1:])))
+    return symbols, np.array(coordinates)
 
-    return symbols, coordinates
+def align_to_z_axis(symbols, coordinates, threshold=1e-8):
+    """Align the molecule along the z-axis and zero out small values across all axes."""
+    masses = np.array([get_atomic_mass(sym) for sym in symbols])
+    total_mass = np.sum(masses)
+
+    # Center the molecule at the origin (set center of mass to [0, 0, 0])
+    center_of_mass = np.sum(masses[:, np.newaxis] * coordinates, axis=0) / total_mass
+    shifted_coords = coordinates - center_of_mass
+
+    # Use SVD to find the best alignment axis
+    _, _, vh = np.linalg.svd(shifted_coords)
+    rotation_matrix = vh.T
+
+    # Rotate the coordinates to align the molecule along the z-axis
+    aligned_coords = np.dot(shifted_coords, rotation_matrix)
+
+    # Zero out small values based on the threshold for all axes
+    aligned_coords[np.abs(aligned_coords) < threshold] = 0.0
+
+    return aligned_coords
+
 
 def get_moments_of_inertia(symbols, coordinates):
-    """Calculate the principal moments of inertia from symbols and coordinates."""
+    """Calculate the moments of inertia after alignment."""
     masses = np.array([get_atomic_mass(sym) for sym in symbols])
-    coords = np.array(coordinates) * angstrom_to_m
+    coords = coordinates * angstrom_to_m  # Convert to meters
 
-    # Calculate the center of mass
-    total_mass = np.sum(masses)
-    center_of_mass = np.sum(masses[:, np.newaxis] * coords, axis=0) / total_mass
-
-    # Shift coordinates to the center of mass
-    shifted_coords = coords - center_of_mass
-
-    # Calculate the moment of inertia tensor
+    # Initialize the inertia tensor
     I = np.zeros((3, 3))
-    for m, r in zip(masses, shifted_coords):
+    for m, r in zip(masses, coords):
         I[0, 0] += m * (r[1]**2 + r[2]**2)
         I[1, 1] += m * (r[0]**2 + r[2]**2)
         I[2, 2] += m * (r[0]**2 + r[1]**2)
@@ -55,20 +61,14 @@ def get_moments_of_inertia(symbols, coordinates):
         I[0, 2] -= m * r[0] * r[2]
         I[1, 2] -= m * r[1] * r[2]
 
-    I[1, 0] = I[0, 1]
-    I[2, 0] = I[0, 2]
-    I[2, 1] = I[1, 2]
+    # Fill symmetric elements
+    I[1, 0], I[2, 0], I[2, 1] = I[0, 1], I[0, 2], I[1, 2]
 
-    # Diagonalize the moment of inertia tensor to get principal moments
+    # Diagonalize the inertia tensor
     eigenvalues, _ = np.linalg.eigh(I)
-    Ia, Ib, Ic = np.sort(eigenvalues)  # Sort moments of inertia
-
-    # Adjust for linear molecules
-    if len(symbols) <= 3:  # Assuming linear for diatomic and triatomic
-        Ia = 0  # Set the moment of inertia along the molecular axis to zero
+    Ia, Ib, Ic = np.sort(eigenvalues)
 
     return Ia, Ib, Ic
-
 def pre_exponential_factor(m, T, sigma, Ia, Ib, Ic):
     """Calculate the pre-exponential factor (v) for desorption."""
     kB = 1.380649e-23  # Boltzmann constant in J/K
@@ -80,37 +80,38 @@ def pre_exponential_factor(m, T, sigma, Ia, Ib, Ic):
 
     # Rotational contribution (considering Ia = 0 for linear molecules)
     if Ia == 0:
-        rotational_part = (8 * pi**2 * kB * T / h**2)**(3 / 2) * math.sqrt(Ib * Ic)
+        rotational_part = (8 * pi**2 * kB * T / h**2) * (Ib / sigma)
     else:
-        rotational_part = (8 * pi**2 * kB * T / h**2)**(3 / 2) * math.sqrt(Ia * Ib * Ic)
+        rotational_part = (pi**0.5 / sigma)*(8 * pi**2 * kB * T / h**2)**(3 / 2) * math.sqrt(Ia * Ib * Ic)
 
     # Final pre-exponential factor
-    v = ((kB * T) / h) * translational_part * (pi**0.5 / sigma) * rotational_part
+    v = ((kB * T) / h) * translational_part  * rotational_part
 
     return v
 
 def main():
     """Main function to get input and calculate the pre-exponential factor."""
-    print("Enter the coordinates in the cartesian format:")
+    print("Enter the coordinates in the xyz format:")
+    print("... (One atom per line)")
+    print("When done, press Enter twice.\n")
 
-    # Read multi-line cartesian input from user
     input_string = ""
     while True:
         line = input()
-        if line.strip() == "":
+        if not line.strip():
             break
         input_string += line + "\n"
 
-    # Parse symbols and coordinates
     symbols, coordinates = parse_coordinates(input_string)
-    
-    # Ask the user if the molecule is linear or non-linear
-    is_linear = input("Is the molecule linear? (yes/no): ").strip().lower() == "yes"
-    
-    # Calculate moments of inertia
-    Ia, Ib, Ic = get_moments_of_inertia(symbols, coordinates)
-    print(f"Principal moments of inertia (kg·m²): Ia={Ia:.3e}, Ib={Ib:.3e}, Ic={Ic:.3e}")
 
+    # Align the molecule along the z-axis
+    aligned_coordinates = align_to_z_axis(symbols, coordinates)
+
+    # Calculate moments of inertia
+    Ia, Ib, Ic = get_moments_of_inertia(symbols, aligned_coordinates)
+    print(f"Aligned coordinates:\n{aligned_coordinates}")
+    print(f"Principal moments of inertia (kg·m²): Ia={Ia:.3e}, Ib={Ib:.3e}, Ic={Ic:.3e}")
+   
     # Get additional input for the pre-exponential factor
     mass = float(input("Enter the mass of the molecule (in kg): "))
     temperature = float(input("Enter the temperature (in K): "))
